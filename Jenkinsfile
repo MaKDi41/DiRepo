@@ -1,5 +1,9 @@
 pipeline {
-    agent any
+    agent {
+        node {
+            label 'Yamix1'
+        }
+    }
     
     environment {
         DOCKERHUB_CREDENTIALS = credentials('DockerHub')
