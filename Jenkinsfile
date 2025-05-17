@@ -6,7 +6,6 @@ pipeline {
     }
     
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('DockerHub')
         DOCKER_IMAGE = 'makdi41/edik-museum'
         DOCKER_TAG = "${BUILD_NUMBER}"
     }
@@ -31,9 +30,10 @@ pipeline {
         
         stage('Login to DockerHub') {
             steps {
-                script {
-                    // Логин в Docker Hub
-                    sh "echo ${DOCKERHUB_CREDENTIALS_PSW} | docker login -u ${DOCKERHUB_CREDENTIALS_USR} --password-stdin"
+                withCredentials([usernamePassword(credentialsId: 'DockerHub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                    sh '''
+                        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                    '''
                 }
             }
         }
