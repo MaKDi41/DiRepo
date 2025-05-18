@@ -6,7 +6,7 @@ pipeline {
     }
     
     environment {
-        SOURCE_TOKEN = credentials('github-token')
+        SOURCE_TOKEN = credentials('github-token')  // ID должен точно совпадать с тем, что в Jenkins
         TARGET_TOKEN = credentials('gitlab-token')
         PYTHON_SCRIPT = 'git_migrator.py'
         SOURCE_URL = 'https://github.com/MaKDi41/DiRepo'
@@ -15,22 +15,48 @@ pipeline {
     }
     
     stages {
-        stage('Validate Parameters') {
+        stage('Check Credentials') {
             steps {
                 script {
-                    // Проверяем наличие credentials
+                    // Выводим доступные переменные окружения для отладки
+                    sh 'printenv | sort'
+                    
+                    echo "Checking credentials configuration..."
+                    
+                    // Проверка GitHub токена
+                    if (!env.SOURCE_TOKEN) {
+                        error """
+                            GitHub token variable not found!
+                            Current environment variables available: ${env.getEnvironment().keySet()}
+                            Please check if credential 'github-token' exists and is accessible.
+                        """
+                    }
                     if (!env.SOURCE_TOKEN_PSW) {
                         error """
-                            GitHub token not found! Please configure 'github-token' credential in Jenkins.
-                            Go to: Jenkins Dashboard -> Manage Jenkins -> Manage Credentials
+                            GitHub token password not found!
+                            Please make sure credential 'github-token' is of type 'Secret text' and contains the token.
+                            Steps to fix:
+                            1. Go to Jenkins Dashboard
+                            2. Click on 'Manage Jenkins'
+                            3. Click on 'Manage Credentials'
+                            4. Find or create credential with exactly ID 'github-token'
+                            5. Make sure it's type is 'Secret text'
+                            6. Paste your GitHub token in the 'Secret' field
                         """
+                    }
+                    
+                    // Проверка GitLab токена
+                    if (!env.TARGET_TOKEN) {
+                        error "GitLab token variable not found!"
                     }
                     if (!env.TARGET_TOKEN_PSW) {
                         error """
-                            GitLab token not found! Please configure 'gitlab-token' credential in Jenkins.
-                            Go to: Jenkins Dashboard -> Manage Jenkins -> Manage Credentials
+                            GitLab token password not found!
+                            Please make sure credential 'gitlab-token' is of type 'Secret text' and contains the token.
                         """
                     }
+                    
+                    echo "Credentials check passed successfully!"
                 }
             }
         }
