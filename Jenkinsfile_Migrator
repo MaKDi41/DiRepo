@@ -1,0 +1,142 @@
+pipeline {
+    agent {
+        node {
+            label 'Yamix1'
+        }
+    }
+    
+    parameters {
+        choice(
+            name: 'SOURCE_PLATFORM',
+            choices: ['github', 'gitlab', 'gitea'],
+            description: 'Source Git platform'
+        )
+        choice(
+            name: 'TARGET_PLATFORM',
+            choices: ['gitlab', 'github', 'gitea'],
+            description: 'Target Git platform'
+        )
+        string(
+            name: 'SOURCE_URL',
+            description: 'Source repository URL',
+            trim: true
+        )
+        string(
+            name: 'TARGET_NAMESPACE',
+            description: 'Target namespace (username or organization)',
+            trim: true
+        )
+        string(
+            name: 'GITEA_URL',
+            description: 'Gitea instance URL (required if using Gitea)',
+            defaultValue: 'https://gitea.example.com',
+            trim: true
+        )
+    }
+    
+    environment {
+        SOURCE_TOKEN = credentials('source-git-token')
+        TARGET_TOKEN = credentials('target-git-token')
+        PYTHON_SCRIPT = 'git_migrator.py'
+    }
+    
+    stages {
+        stage('Validate Parameters') {
+            steps {
+                script {
+                    if (params.SOURCE_PLATFORM == params.TARGET_PLATFORM) {
+                        error "Source and target platforms cannot be the same!"
+                    }
+                    
+                    if (!params.SOURCE_URL) {
+                        error "Source URL is required!"
+                    }
+                    
+                    if (!params.TARGET_NAMESPACE) {
+                        error "Target namespace is required!"
+                    }
+                    
+                    // Проверка URL для Gitea
+                    if ((params.SOURCE_PLATFORM == 'gitea' || params.TARGET_PLATFORM == 'gitea') && 
+                        params.GITEA_URL == 'https://gitea.example.com') {
+                        error "Please provide a valid Gitea URL!"
+                    }
+                }
+            }
+        }
+        
+        stage('Setup Python Environment') {
+            steps {
+                script {
+                    // Установка зависимостей Python
+                    sh '''
+                        python -m pip install --upgrade pip
+                        pip install requests
+                    '''
+                }
+            }
+        }
+        
+        stage('Prepare Migration Script') {
+            steps {
+                // Делаем скрипт исполняемым
+                sh "chmod +x ${PYTHON_SCRIPT}"
+            }
+        }
+        
+        stage('Run Migration') {
+            steps {
+                script {
+                    def giteaUrlParam = ''
+                    if (params.SOURCE_PLATFORM == 'gitea' || params.TARGET_PLATFORM == 'gitea') {
+                        giteaUrlParam = "--gitea-url '${params.GITEA_URL}'"
+                    }
+                    
+                    def exitCode = sh(
+                        script: """
+                            python ${PYTHON_SCRIPT} \
+                                --source-platform '${params.SOURCE_PLATFORM}' \
+                                --target-platform '${params.TARGET_PLATFORM}' \
+                                --source-token '${SOURCE_TOKEN}' \
+                                --target-token '${TARGET_TOKEN}' \
+                                --source-url '${params.SOURCE_URL}' \
+                                --target-namespace '${params.TARGET_NAMESPACE}' \
+                                ${giteaUrlParam}
+                        """,
+                        returnStatus: true
+                    )
+                    
+                    if (exitCode != 0) {
+                        error "Migration failed! Check the logs for details."
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo """
+            =========================================
+            Repository Migration Successful!
+            
+            From: ${params.SOURCE_PLATFORM}
+            To: ${params.TARGET_PLATFORM}
+            Source: ${params.SOURCE_URL}
+            Target Namespace: ${params.TARGET_NAMESPACE}
+            
+            The repository has been successfully migrated.
+            =========================================
+            """
+        }
+        failure {
+            echo """
+            =========================================
+            Repository Migration Failed!
+            
+            Please check the logs for details.
+            =========================================
+            """
+        }
+    }
+} 
