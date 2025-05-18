@@ -80,18 +80,44 @@ pipeline {
                 }
             }
         }
+
+        stage('Get Service URL') {
+            steps {
+                script {
+                    // Получаем IP-адрес агента
+                    env.AGENT_IP = sh(script: '''
+                        ip addr show | grep -E "inet .* global" | grep -v docker | head -n 1 | awk '{print $2}' | cut -d'/' -f1
+                    ''', returnStdout: true).trim()
+                    
+                    // Проверяем доступность сервиса по полученному IP
+                    sh """
+                        if curl -s http://${AGENT_IP}:${APP_PORT} > /dev/null; then
+                            echo "Service is accessible at: http://${AGENT_IP}:${APP_PORT}"
+                        else
+                            echo "Warning: Service may not be accessible from outside"
+                        fi
+                    """
+                }
+            }
+        }
     }
     
     post {
         success {
-            echo """
-            =========================================
-            Deployment successful!
-            Service: ${CONTAINER_NAME}
-            Port: ${APP_PORT}
-            Image: ${DOCKER_IMAGE}:${DOCKER_TAG}
-            =========================================
-            """
+            script {
+                echo """
+                =========================================
+                Deployment successful!
+                Service: ${CONTAINER_NAME}
+                Port: ${APP_PORT}
+                Image: ${DOCKER_IMAGE}:${DOCKER_TAG}
+                
+                Access URLs:
+                - Local: http://localhost:${APP_PORT}
+                - Remote: http://${AGENT_IP}:${APP_PORT}
+                =========================================
+                """
+            }
         }
         
         failure {
