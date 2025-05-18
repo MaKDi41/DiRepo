@@ -5,44 +5,13 @@ pipeline {
         }
     }
     
-    parameters {
-        choice(
-            name: 'SOURCE_PLATFORM',
-            choices: ['github', 'gitlab', 'gitea'],
-            description: 'Source Git platform'
-        )
-        choice(
-            name: 'TARGET_PLATFORM',
-            choices: ['gitlab', 'github', 'gitea'],
-            description: 'Target Git platform'
-        )
-        string(
-            name: 'SOURCE_URL',
-            description: 'Source repository URL',
-            trim: true
-        )
-        string(
-            name: 'TARGET_NAMESPACE',
-            description: 'Target namespace (username or organization)',
-            trim: true
-        )
-        string(
-            name: 'GITEA_URL',
-            description: 'Gitea instance URL (required if using Gitea)',
-            defaultValue: 'https://gitea.example.com',
-            trim: true
-        )
-        booleanParam(
-            name: 'DEBUG_MODE',
-            defaultValue: true,
-            description: 'Enable debug mode for detailed logging'
-        )
-    }
-    
     environment {
-        SOURCE_TOKEN = credentials('source-git-token')
-        TARGET_TOKEN = credentials('target-git-token')
+        SOURCE_TOKEN = credentials('github-token')
+        TARGET_TOKEN = credentials('gitlab-token')
         PYTHON_SCRIPT = 'git_migrator.py'
+        SOURCE_URL = 'https://github.com/MaKDi41/DiRepo'
+        TARGET_NAMESPACE = 'makdi41'
+        GITLAB_URL = 'http://37.220.82.105'
     }
     
     stages {
@@ -52,32 +21,15 @@ pipeline {
                     // Проверяем наличие credentials
                     if (!env.SOURCE_TOKEN_PSW) {
                         error """
-                            Source token not found! Please configure 'source-git-token' credential in Jenkins.
+                            GitHub token not found! Please configure 'github-token' credential in Jenkins.
                             Go to: Jenkins Dashboard -> Manage Jenkins -> Manage Credentials
                         """
                     }
                     if (!env.TARGET_TOKEN_PSW) {
                         error """
-                            Target token not found! Please configure 'target-git-token' credential in Jenkins.
+                            GitLab token not found! Please configure 'gitlab-token' credential in Jenkins.
                             Go to: Jenkins Dashboard -> Manage Jenkins -> Manage Credentials
                         """
-                    }
-
-                    if (params.SOURCE_PLATFORM == params.TARGET_PLATFORM) {
-                        error "Source and target platforms cannot be the same!"
-                    }
-                    
-                    if (!params.SOURCE_URL) {
-                        error "Source URL is required!"
-                    }
-                    
-                    if (!params.TARGET_NAMESPACE) {
-                        error "Target namespace is required!"
-                    }
-                    
-                    if ((params.SOURCE_PLATFORM == 'gitea' || params.TARGET_PLATFORM == 'gitea') && 
-                        params.GITEA_URL == 'https://gitea.example.com') {
-                        error "Please provide a valid Gitea URL!"
                     }
                 }
             }
@@ -108,26 +60,19 @@ pipeline {
         stage('Run Migration') {
             steps {
                 script {
-                    def giteaUrlParam = ''
-                    if (params.SOURCE_PLATFORM == 'gitea' || params.TARGET_PLATFORM == 'gitea') {
-                        giteaUrlParam = "--gitea-url '${params.GITEA_URL}'"
-                    }
-                    
-                    def debugParam = params.DEBUG_MODE ? '--debug' : ''
-                    
                     // Запускаем миграцию с выводом всех сообщений
                     def exitCode = sh(
                         script: """
                             set -x
                             python ${PYTHON_SCRIPT} \
-                                --source-platform '${params.SOURCE_PLATFORM}' \
-                                --target-platform '${params.TARGET_PLATFORM}' \
+                                --source-platform 'github' \
+                                --target-platform 'gitlab' \
                                 --source-token '${SOURCE_TOKEN_PSW}' \
                                 --target-token '${TARGET_TOKEN_PSW}' \
-                                --source-url '${params.SOURCE_URL}' \
-                                --target-namespace '${params.TARGET_NAMESPACE}' \
-                                ${giteaUrlParam} \
-                                ${debugParam}
+                                --source-url '${SOURCE_URL}' \
+                                --target-namespace '${TARGET_NAMESPACE}' \
+                                --gitlab-url '${GITLAB_URL}' \
+                                --debug
                         """,
                         returnStatus: true
                     )
@@ -146,10 +91,8 @@ pipeline {
             =========================================
             Repository Migration Successful!
             
-            From: ${params.SOURCE_PLATFORM}
-            To: ${params.TARGET_PLATFORM}
-            Source: ${params.SOURCE_URL}
-            Target Namespace: ${params.TARGET_NAMESPACE}
+            From: GitHub (${SOURCE_URL})
+            To: GitLab (${GITLAB_URL}/${TARGET_NAMESPACE}/DiRepo)
             
             The repository has been successfully migrated.
             =========================================
@@ -162,11 +105,9 @@ pipeline {
             
             Common issues:
             1. Invalid or expired tokens
-            2. Repository already exists in target
-            3. Invalid repository URL
-            4. Invalid namespace
-            5. Network connectivity issues
-            6. Insufficient permissions
+            2. Repository already exists in target GitLab
+            3. Network connectivity issues with GitLab (${GITLAB_URL})
+            4. Insufficient permissions
             
             Check the logs above for detailed error messages.
             =========================================

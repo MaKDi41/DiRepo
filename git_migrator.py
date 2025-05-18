@@ -33,13 +33,19 @@ class GitMigrator:
             }
         }
 
-    def set_credentials(self, source_token, target_token, source_platform, target_platform, gitea_url=None):
+    def set_credentials(self, source_token, target_token, source_platform, target_platform, gitlab_url=None, gitea_url=None):
         logger.info(f"Setting up credentials for {source_platform} -> {target_platform}")
         self.source_token = source_token
         self.target_token = target_token
         self.source_platform = source_platform.lower()
         self.target_platform = target_platform.lower()
         
+        # Настройка URL для GitLab если используется кастомный сервер
+        if gitlab_url and target_platform == 'gitlab':
+            logger.info(f"Configuring custom GitLab URL: {gitlab_url}")
+            self.supported_platforms['gitlab']['api_url'] = f"{gitlab_url}/api/v4"
+            self.supported_platforms['gitlab']['clone_url'] = gitlab_url
+
         # Настройка URL для Gitea если используется
         if gitea_url and (source_platform == 'gitea' or target_platform == 'gitea'):
             logger.info(f"Configuring Gitea URL: {gitea_url}")
@@ -110,8 +116,8 @@ class GitMigrator:
             
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to create repository: {str(e)}")
-            if response:
-                logger.error(f"API Response: {response.text}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"API Response: {e.response.text}")
             raise
 
     def migrate_repository(self, source_url, target_namespace):
@@ -141,7 +147,8 @@ class GitMigrator:
             if self.target_platform == 'github':
                 target_url = f"https://oauth2:{self.target_token}@github.com/{target_namespace}/{repo_name}.git"
             elif self.target_platform == 'gitlab':
-                target_url = f"https://oauth2:{self.target_token}@gitlab.com/{target_namespace}/{repo_name}.git"
+                base_url = self.supported_platforms['gitlab']['clone_url'].replace('https://', '')
+                target_url = f"https://oauth2:{self.target_token}@{base_url}/{target_namespace}/{repo_name}.git"
             elif self.target_platform == 'gitea':
                 base_url = self.supported_platforms['gitea']['clone_url'].replace('https://', '')
                 target_url = f"https://oauth2:{self.target_token}@{base_url}/{target_namespace}/{repo_name}.git"
@@ -174,6 +181,7 @@ def main():
     parser.add_argument('--target-token', required=True, help='Target platform API token')
     parser.add_argument('--source-url', required=True, help='Source repository URL')
     parser.add_argument('--target-namespace', required=True, help='Target namespace (username or organization)')
+    parser.add_argument('--gitlab-url', help='GitLab instance URL (required if using custom GitLab)')
     parser.add_argument('--gitea-url', help='Gitea instance URL (required if using Gitea)')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     
@@ -195,6 +203,7 @@ def main():
             args.target_token,
             args.source_platform,
             args.target_platform,
+            args.gitlab_url,
             args.gitea_url
         )
         
