@@ -32,6 +32,11 @@ pipeline {
             defaultValue: 'https://gitea.example.com',
             trim: true
         )
+        booleanParam(
+            name: 'DEBUG_MODE',
+            defaultValue: true,
+            description: 'Enable debug mode for detailed logging'
+        )
     }
     
     environment {
@@ -44,6 +49,20 @@ pipeline {
         stage('Validate Parameters') {
             steps {
                 script {
+                    // Проверяем наличие credentials
+                    if (!env.SOURCE_TOKEN_PSW) {
+                        error """
+                            Source token not found! Please configure 'source-git-token' credential in Jenkins.
+                            Go to: Jenkins Dashboard -> Manage Jenkins -> Manage Credentials
+                        """
+                    }
+                    if (!env.TARGET_TOKEN_PSW) {
+                        error """
+                            Target token not found! Please configure 'target-git-token' credential in Jenkins.
+                            Go to: Jenkins Dashboard -> Manage Jenkins -> Manage Credentials
+                        """
+                    }
+
                     if (params.SOURCE_PLATFORM == params.TARGET_PLATFORM) {
                         error "Source and target platforms cannot be the same!"
                     }
@@ -56,7 +75,6 @@ pipeline {
                         error "Target namespace is required!"
                     }
                     
-                    // Проверка URL для Gitea
                     if ((params.SOURCE_PLATFORM == 'gitea' || params.TARGET_PLATFORM == 'gitea') && 
                         params.GITEA_URL == 'https://gitea.example.com') {
                         error "Please provide a valid Gitea URL!"
@@ -68,6 +86,9 @@ pipeline {
         stage('Setup Python Environment') {
             steps {
                 script {
+                    // Проверяем версию Python
+                    sh 'python --version'
+                    
                     // Установка зависимостей Python
                     sh '''
                         python -m pip install --upgrade pip
@@ -92,22 +113,27 @@ pipeline {
                         giteaUrlParam = "--gitea-url '${params.GITEA_URL}'"
                     }
                     
+                    def debugParam = params.DEBUG_MODE ? '--debug' : ''
+                    
+                    // Запускаем миграцию с выводом всех сообщений
                     def exitCode = sh(
                         script: """
+                            set -x
                             python ${PYTHON_SCRIPT} \
                                 --source-platform '${params.SOURCE_PLATFORM}' \
                                 --target-platform '${params.TARGET_PLATFORM}' \
-                                --source-token '${SOURCE_TOKEN}' \
-                                --target-token '${TARGET_TOKEN}' \
+                                --source-token '${SOURCE_TOKEN_PSW}' \
+                                --target-token '${TARGET_TOKEN_PSW}' \
                                 --source-url '${params.SOURCE_URL}' \
                                 --target-namespace '${params.TARGET_NAMESPACE}' \
-                                ${giteaUrlParam}
+                                ${giteaUrlParam} \
+                                ${debugParam}
                         """,
                         returnStatus: true
                     )
                     
                     if (exitCode != 0) {
-                        error "Migration failed! Check the logs for details."
+                        error "Migration failed with exit code ${exitCode}! Check the logs above for details."
                     }
                 }
             }
@@ -134,7 +160,15 @@ pipeline {
             =========================================
             Repository Migration Failed!
             
-            Please check the logs for details.
+            Common issues:
+            1. Invalid or expired tokens
+            2. Repository already exists in target
+            3. Invalid repository URL
+            4. Invalid namespace
+            5. Network connectivity issues
+            6. Insufficient permissions
+            
+            Check the logs above for detailed error messages.
             =========================================
             """
         }
